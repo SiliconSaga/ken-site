@@ -38,6 +38,14 @@ contact_form_url:
 survey_form_url:
 bulletin_form_url:
 
+# Repo coordinates for the footer "Edit this page on GitHub" link. Update
+# these if the repo is transferred (e.g. to Ken's own account).
+github_repo: SiliconSaga/ken-site
+github_branch: main
+
+# Link target for the "GDD" credit in the footer.
+gdd_url: https://siliconsaga.github.io/yggdrasil/gdd/
+
 # No remote theme — this site ships its own _layouts and assets/css so the
 # look is fully under our control (and editable without a theme gem).
 
@@ -72,6 +80,7 @@ permalink: pretty
 
 exclude:
   - README.md
+  - MAINTAINING.md
   - LICENSE
   - Gemfile
   - Gemfile.lock

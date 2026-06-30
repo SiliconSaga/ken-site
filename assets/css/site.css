@@ -313,6 +313,10 @@ section.block.cream .text-gold { color: var(--primary); }
 .site-footer a { color: var(--fg-muted); }
 .site-footer a:hover { color: var(--primary); }
 .footer-legal { border-top: 1px solid var(--border); margin-top: 2.5rem; padding-top: 1.5rem; font-size: 0.82rem; line-height: 1.6; }
+.footer-meta { opacity: 0.7; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; }
+.edit-link { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--fg-muted); }
+.edit-link:hover { color: var(--primary); text-decoration: none; }
+.edit-link svg { width: 0.95rem; height: 0.95rem; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ----- Responsive -------------------------------------------------- */
 @media (max-width: 860px) {
