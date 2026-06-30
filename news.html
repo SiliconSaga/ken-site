@@ -1,0 +1,28 @@
+---
+layout: default
+title: News & Updates
+description: The latest from the Gibbons for West Orange campaign.
+---
+
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <p class="eyebrow">News &amp; Updates</p>
+      <h1>The Latest from the Campaign</h1>
+      <p class="lead">Announcements, policy updates, and news from the trail.</p>
+    </div>
+
+    {% assign items = site.news | sort: "date" | reverse %}
+    <div class="news-grid">
+      {% for post in items %}
+      <article class="news-card">
+        {% if post.category %}<span class="tag">{{ post.category }}</span>{% endif %}
+        <p class="date">{{ post.date | date: "%B %-d, %Y" }}</p>
+        <h3><a href="{{ post.url | relative_url }}">{{ post.title }}</a></h3>
+        <p>{{ post.excerpt_text | default: post.description }}</p>
+        <a class="more" href="{{ post.url | relative_url }}">Read more &rarr;</a>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>

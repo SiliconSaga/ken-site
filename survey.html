@@ -1,0 +1,28 @@
+---
+layout: default
+title: Resident Survey
+description: Tell Kenneth Gibbons what matters most to you in West Orange.
+---
+
+<section class="block">
+  <div class="container" style="max-width:820px">
+    <div class="section-head">
+      <p class="eyebrow">Your Voice</p>
+      <h1>Resident Survey</h1>
+      <p class="lead">What should West Orange's next council member focus on first? Share the issues that matter most to you and your neighbors — your answers help shape Kenneth's priorities.</p>
+    </div>
+
+    {% if site.survey_form_url %}
+    <div class="embed-wrap">
+      <iframe src="{{ site.survey_form_url }}" title="Resident survey" loading="lazy">Loading…</iframe>
+    </div>
+    {% else %}
+    <div class="callout">
+      <h3>Share your priorities</h3>
+      <p>Email the campaign and let us know which issues matter most to you — taxes, transparency, overdevelopment, roads and safety, support for seniors and families, small business, or something else. A short note is all it takes.</p>
+      <p><a class="btn btn-primary" href="mailto:{{ site.email }}?subject=Resident Survey&amp;body=My top concerns for West Orange:%0D%0A%0D%0AMy neighborhood/ward:%0D%0A">Share Your Priorities</a></p>
+      <p style="font-size:0.9rem;color:var(--fg-muted)">Prefer a quick form? The campaign can post a Google Form here — set <code>survey_form_url</code> in the site config.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>

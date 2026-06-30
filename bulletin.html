@@ -1,0 +1,28 @@
+---
+layout: default
+title: Community Bulletin
+description: Sign up for campaign updates from Gibbons for West Orange.
+---
+
+<section class="block">
+  <div class="container" style="max-width:820px">
+    <div class="section-head">
+      <p class="eyebrow">Stay Informed</p>
+      <h1>Community Bulletin</h1>
+      <p class="lead">Get occasional updates from the campaign — town hall dates, where Kenneth stands on the issues, and ways to get involved. No spam, just the news that matters to West Orange.</p>
+    </div>
+
+    {% if site.bulletin_form_url %}
+    <div class="embed-wrap">
+      <iframe src="{{ site.bulletin_form_url }}" title="Newsletter sign-up" loading="lazy">Loading…</iframe>
+    </div>
+    {% else %}
+    <div class="callout">
+      <h3>Subscribe to updates</h3>
+      <p>Send us your email address and we'll add you to the community bulletin.</p>
+      <p><a class="btn btn-primary" href="mailto:{{ site.email }}?subject=Subscribe to the Community Bulletin&amp;body=Please add me to the community bulletin. My email:%0D%0A">Subscribe by Email</a></p>
+      <p style="font-size:0.9rem;color:var(--fg-muted)">For a one-click sign-up form, the campaign can connect a Google Form or newsletter service — set <code>bulletin_form_url</code> in the site config.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>

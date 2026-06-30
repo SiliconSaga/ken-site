@@ -1,10 +1,78 @@
-title: <your name>'s page
-description: Built with the GDD GitHub Pages template
-theme: jekyll-theme-cayman
+title: Kenneth Gibbons for West Orange Township Council
+description: >-
+  Kenneth Gibbons — Candidate for West Orange Township Council (At-Large).
+  A third-generation homeowner fighting for lower taxes, accountability,
+  and community-first leadership.
+author: Gibbons for West Orange
 
-# A few other GitHub-supported themes you can swap to later by
-# editing the `theme:` line above:
-#   jekyll-theme-minimal, jekyll-theme-slate, jekyll-theme-architect,
-#   jekyll-theme-merlot, jekyll-theme-modernist, jekyll-theme-leap-day
-# For richer theming, ask your agent to walk you through forking a
-# theme repo or moving to a different SSG.
+# Project-pages deploy lives under /ken-site (e.g. cervator.github.io/ken-site).
+# When Ken moves to the custom domain (gibbonsforwestorange.com, an apex
+# domain), set this back to "" and add a CNAME file. All internal links and
+# asset paths use the `relative_url` filter so flipping this one line moves
+# the whole site.
+baseurl: /ken-site
+url: ""
+
+# Contact / campaign details surfaced in the footer and contact page.
+email: info@gibbonsforwestorange.com
+support_email: support@gibbonsforwestorange.com
+address: 7 Riggs Place, West Orange, NJ, 07052
+donate_url: https://secure.anedot.com/gibbons-for-west-orange/donate
+
+# Rotating announcement bar (the gold strip across the very top). Edit freely
+# — add or remove lines. Each item has `text` and an optional `url` to link to.
+# On the original site this banner was driven by a backend only the previous
+# developer could post to; here it's just this list, which Ken controls.
+announcements:
+  - text: "Lower Taxes. Real Accountability. Transparent Government."
+  - text: "Elect an Auditor — Not an Insider."
+  - text: "A Stronger Voice for West Orange."
+
+# --- Forms (Ken-owned channels) ---------------------------------------
+# The original site posted Volunteer/Contact/Survey/Bulletin to a Supabase
+# backend the previous developer controls. These are placeholders for
+# Ken-owned replacements: drop in a Google Form URL to switch a page from
+# the mailto fallback to an embedded form. Leave blank to use mailto.
+volunteer_form_url:
+contact_form_url:
+survey_form_url:
+bulletin_form_url:
+
+# No remote theme — this site ships its own _layouts and assets/css so the
+# look is fully under our control (and editable without a theme gem).
+
+# News articles are a collection: one file per article under _news/, each
+# rendered at its own URL (/news/<name>/). This is what fixed the original
+# site's bug where article cards opened nothing.
+collections:
+  news:
+    output: true
+    permalink: /news/:name/
+
+defaults:
+  - scope:
+      path: ""
+      type: news
+    values:
+      layout: news
+
+# Top navigation. News is promoted into the top bar here (it lived only in
+# the footer on the original site, and its articles didn't open).
+nav:
+  - { title: Home,           url: / }
+  - { title: About,          url: /about/ }
+  - { title: Priorities,     url: /priorities/ }
+  - { title: Accountability, url: /accountability/ }
+  - { title: News,           url: /news/ }
+  - { title: Volunteer,      url: /volunteer/ }
+  - { title: Contact,        url: /contact/ }
+
+# Pretty URLs for the standalone pages (/about/ rather than /about.html).
+permalink: pretty
+
+exclude:
+  - README.md
+  - LICENSE
+  - Gemfile
+  - Gemfile.lock
+  - vendor
