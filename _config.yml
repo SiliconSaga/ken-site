@@ -70,6 +70,7 @@ nav:
   - { title: Home,           url: / }
   - { title: About,          url: /about/ }
   - { title: Priorities,     url: /priorities/ }
+  - { title: The Plan,       url: /plan/ }
   - { title: Accountability, url: /accountability/ }
   - { title: News,           url: /news/ }
   - { title: Volunteer,      url: /volunteer/ }
