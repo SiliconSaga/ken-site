@@ -1,0 +1,68 @@
+name: PR preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: gh-pages-write
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      PR: ${{ github.event.number }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Build with the preview baseurl
+        run: bundle exec jekyll build --baseurl "/ken-site/pr-preview/pr-${PR}"
+
+      - name: Publish the preview
+        run: |
+          set -euo pipefail
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages:refs/remotes/origin/gh-pages
+          git worktree add -B gh-pages ../ghp origin/gh-pages
+          rm -rf "../ghp/pr-preview/pr-${PR}"
+          mkdir -p "../ghp/pr-preview/pr-${PR}"
+          cp -r _site/. "../ghp/pr-preview/pr-${PR}/"
+          cd ../ghp
+          git add -A -- "pr-preview/pr-${PR}"
+          git commit -m "preview: PR #${PR} (${GITHUB_SHA::7})" || { echo "No preview changes."; exit 0; }
+          for i in 1 2 3; do
+            git push origin gh-pages && exit 0
+            git pull --rebase origin gh-pages
+          done
+          echo "Failed to push after 3 attempts." >&2
+          exit 1
+
+      - name: Upsert the sticky comment
+        run: |
+          set -euo pipefail
+          URL="https://siliconsaga.github.io/ken-site/pr-preview/pr-${PR}/"
+          BODY="<!-- pr-preview -->
+          ### 🔎 Preview this change
+
+          **[Open the preview site](${URL})**
+
+          Built from \`${GITHUB_SHA::7}\`. Updates on every push. Removed when this PR closes."
+          ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+                --jq 'map(select(.body | startswith("<!-- pr-preview -->"))) | .[0].id // empty')
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -f body="$BODY" >/dev/null
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$BODY" >/dev/null
+          fi
