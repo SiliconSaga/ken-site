@@ -158,12 +158,6 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        if: steps.state.outputs.state == 'open'
-        with:
-          ref: main
-          path: baseline
-
       - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1
         with:
           ruby-version: '3.3'
@@ -180,13 +174,27 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Build candidate (PR) and baseline (main) at baseurl ""
+      - name: Build candidate (PR) at baseurl ""
         if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
           bundle exec jekyll build --baseurl "" \
             --config _config.yml,.github/visual-diff/_config.ci.yml \
             --destination _site_pr
+
+      # Check out main AFTER the candidate build, so baseline/ can't be picked
+      # up as content by the candidate build (which would inject phantom
+      # /baseline/* routes).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.state.outputs.state == 'open'
+        with:
+          ref: main
+          path: baseline
+
+      - name: Build baseline (main) at baseurl ""
+        if: steps.state.outputs.state == 'open'
+        run: |
+          set -euo pipefail
           # Build main's source with THIS bundle (identical pinned gems) and the
           # PR's overlay, so baseline works regardless of main's own overlay copy.
           bundle exec jekyll build --source baseline --baseurl "" \
