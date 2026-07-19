@@ -20,9 +20,19 @@ jobs:
       PR: ${{ github.event.number }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      # Re-check live PR state: a synchronize run queued before the PR closed
+      # could otherwise republish a preview after cleanup already removed it.
+      - name: Skip publish if the PR is already closed
+        id: state
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.state')
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+          [ "$STATE" = "open" ] || echo "PR #${PR} is $STATE — a queued run raced the close; skipping publish."
 
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1
         with:
           ruby-version: '3.3'
           bundler-cache: true
@@ -31,6 +41,7 @@ jobs:
         run: bundle exec jekyll build --baseurl "/ken-site/pr-preview/pr-${PR}"
 
       - name: Publish the preview
+        if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
           git config --global user.name  "github-actions[bot]"
@@ -51,6 +62,7 @@ jobs:
           exit 1
 
       - name: Upsert the sticky comment
+        if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
           URL="https://siliconsaga.github.io/ken-site/pr-preview/pr-${PR}/"
@@ -77,7 +89,7 @@ jobs:
     steps:
       # Check out gh-pages directly. A closed PR's merge ref may no longer
       # exist, so a default checkout can fail — and this job needs no PR code.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: gh-pages
 
