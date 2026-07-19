@@ -7,6 +7,13 @@ _site/
 .bundle/
 vendor/
 
+# Visual-diff (Unit 2) local/CI scratch (package-lock.json IS tracked)
+_site_*/
+_diff/
+_diff_out/
+.github/visual-diff/node_modules/
+.github/visual-diff/shots/
+
 # OS noise
 .DS_Store
 Thumbs.db
