@@ -407,3 +407,14 @@ ul.check li::before {
   .grid-2, .grid-3, .grid-4, .news-grid { grid-template-columns: 1fr; }
   body { font-size: 17px; }
 }
+
+/* Reduced-motion: neutralize transitions/animations for motion-sensitive
+   users (and for deterministic CI screenshots). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
