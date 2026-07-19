@@ -20,15 +20,17 @@ jobs:
       PR: ${{ github.event.number }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      # Re-check live PR state: a synchronize run queued before the PR closed
-      # could otherwise republish a preview after cleanup already removed it.
-      - name: Skip publish if the PR is already closed
+      # A synchronize run can be queued before a PR closes. Skip the build when
+      # it's already closed at job start; Publish/Upsert additionally re-check
+      # live state immediately before their side effects (a close can land
+      # mid-build, after cleanup already removed the preview).
+      - name: Check PR state
         id: state
         run: |
           set -euo pipefail
           STATE=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.state')
           echo "state=$STATE" >> "$GITHUB_OUTPUT"
-          [ "$STATE" = "open" ] || echo "PR #${PR} is $STATE — a queued run raced the close; skipping publish."
+          [ "$STATE" = "open" ] || echo "PR #${PR} is $STATE at job start — skipping build."
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -38,12 +40,18 @@ jobs:
           bundler-cache: true
 
       - name: Build with the preview baseurl
+        if: steps.state.outputs.state == 'open'
         run: bundle exec jekyll build --baseurl "/ken-site/pr-preview/pr-${PR}"
 
       - name: Publish the preview
-        if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
+          # Fresh re-check right before the side effect: the PR may have closed
+          # during the build and cleanup may already have removed the preview.
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.state')" != "open" ]; then
+            echo "PR #${PR} is no longer open — skipping publish."
+            exit 0
+          fi
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin gh-pages:refs/remotes/origin/gh-pages
@@ -62,9 +70,14 @@ jobs:
           exit 1
 
       - name: Upsert the sticky comment
-        if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
+          # Fresh re-check right before the side effect: don't post a preview
+          # link on a PR that closed during the build.
+          if [ "$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.state')" != "open" ]; then
+            echo "PR #${PR} is no longer open — skipping comment."
+            exit 0
+          fi
           URL="https://siliconsaga.github.io/ken-site/pr-preview/pr-${PR}/"
           BODY="<!-- pr-preview -->
           ### 🔎 Preview this change
