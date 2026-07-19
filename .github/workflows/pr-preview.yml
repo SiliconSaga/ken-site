@@ -44,6 +44,7 @@ jobs:
         run: bundle exec jekyll build --baseurl "/ken-site/pr-preview/pr-${PR}"
 
       - name: Publish the preview
+        if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
           # Fresh re-check right before the side effect: the PR may have closed
@@ -70,6 +71,7 @@ jobs:
           exit 1
 
       - name: Upsert the sticky comment
+        if: steps.state.outputs.state == 'open'
         run: |
           set -euo pipefail
           # Fresh re-check right before the side effect: don't post a preview
