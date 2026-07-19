@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
+import { san } from './slug.mjs';
 
 const [, , baseDir, candDir, pubDir, previewUrl] = process.argv;
 if (!baseDir || !candDir || !pubDir || !previewUrl) {
@@ -14,10 +15,10 @@ if (!baseDir || !candDir || !pubDir || !previewUrl) {
 const VIEWPORTS = ['mobile', 'desktop'];
 const PXTHRESH = 0.1;   // pixelmatch per-pixel color sensitivity
 const MINPIX = 50;      // ignore sub-visual noise below this many changed pixels
+const CROP_MARGIN = 48; // px of context kept around the changed region
 
 const baseRoutes = JSON.parse(readFileSync(join(baseDir, 'routes.json'), 'utf8'));
 const candRoutes = JSON.parse(readFileSync(join(candDir, 'routes.json'), 'utf8'));
-const san = (r) => (r === '/' ? 'home' : r.replace(/^\/|\/$/g, '').replace(/\//g, '__'));
 const common = candRoutes.filter((r) => baseRoutes.includes(r));
 const added = candRoutes.filter((r) => !baseRoutes.includes(r));
 const removed = baseRoutes.filter((r) => !candRoutes.includes(r));
@@ -27,6 +28,38 @@ function pad(png, w, h) {
   const out = new PNG({ width: w, height: h });
   out.data.fill(0xff); // white
   PNG.bitblt(png, out, 0, 0, png.width, png.height, 0, 0);
+  return out;
+}
+
+// Bounding box of pixels that differ between two same-size images (RGB, small
+// tolerance). Returns null if nothing meaningfully differs.
+function changedBox(a, b, w, h) {
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (Math.abs(a.data[i] - b.data[i]) > 10 ||
+          Math.abs(a.data[i + 1] - b.data[i + 1]) > 10 ||
+          Math.abs(a.data[i + 2] - b.data[i + 2]) > 10) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return maxX < 0 ? null : { minX, minY, maxX, maxY };
+}
+
+// Crop a PNG to the box + margin (clamped). Full image back if box is null.
+function cropTo(png, box, margin, w, h) {
+  if (!box) return png;
+  const x0 = Math.max(0, box.minX - margin);
+  const y0 = Math.max(0, box.minY - margin);
+  const x1 = Math.min(w, box.maxX + margin + 1);
+  const y1 = Math.min(h, box.maxY + margin + 1);
+  const out = new PNG({ width: x1 - x0, height: y1 - y0 });
+  PNG.bitblt(png, out, x0, y0, x1 - x0, y1 - y0, 0, 0);
   return out;
 }
 
@@ -50,9 +83,12 @@ for (const r of common) {
       routeChanged = true;
       const sub = join(pubDir, san(r));
       mkdirSync(sub, { recursive: true });
-      writeFileSync(join(sub, `before__${vp}.png`), PNG.sync.write(A));
-      writeFileSync(join(sub, `after__${vp}.png`), PNG.sync.write(B));
-      writeFileSync(join(sub, `diff__${vp}.png`), PNG.sync.write(diff));
+      // Crop before/after/diff to a tight box around the change (+ margin) so a
+      // one-line edit doesn't post a full-page-tall screenshot.
+      const box = changedBox(A, B, w, h);
+      writeFileSync(join(sub, `before__${vp}.png`), PNG.sync.write(cropTo(A, box, CROP_MARGIN, w, h)));
+      writeFileSync(join(sub, `after__${vp}.png`), PNG.sync.write(cropTo(B, box, CROP_MARGIN, w, h)));
+      writeFileSync(join(sub, `diff__${vp}.png`), PNG.sync.write(cropTo(diff, box, CROP_MARGIN, w, h)));
     }
   }
   if (routeChanged) changed.push(r);
@@ -99,10 +135,15 @@ if (!changed.length && !added.length && !removed.length) {
   if (changed.length) {
     md += `**Changed:** ${changed.map((r) => `\`${r}\``).join(', ')}\n\n`;
     for (const r of changed) {
-      md += `#### \`${r}\`\n\n![diff mobile](${previewUrl}${san(r)}/diff__mobile.png)\n\n`
-        + `[mobile before](${previewUrl}${san(r)}/before__mobile.png) &middot; `
-        + `[after](${previewUrl}${san(r)}/after__mobile.png) &middot; `
-        + `[desktop diff](${previewUrl}${san(r)}/diff__desktop.png)\n\n`;
+      md += `#### \`${r}\`\n\n`;
+      // Only reference viewport images that were actually emitted (a route can
+      // change in one viewport but not the other).
+      for (const vp of VIEWPORTS) {
+        if (!existsSync(join(pubDir, san(r), `diff__${vp}.png`))) continue;
+        md += `**${vp}** — ![diff](${previewUrl}${san(r)}/diff__${vp}.png)\n\n`
+          + `[before](${previewUrl}${san(r)}/before__${vp}.png) &middot; `
+          + `[after](${previewUrl}${san(r)}/after__${vp}.png)\n\n`;
+      }
     }
   }
   if (added.length) md += `**New pages:** ${added.map((r) => `\`${r}\``).join(', ')}\n\n`;

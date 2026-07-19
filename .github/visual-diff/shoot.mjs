@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import { san } from './slug.mjs';
 
 const [, , siteDir, outDir] = process.argv;
 if (!siteDir || !outDir) { console.error('usage: shoot.mjs <siteDir> <outDir>'); process.exit(2); }
@@ -47,34 +48,38 @@ const VIEWPORTS = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'desktop', width: 1280, height: 800 },
 ];
-const san = (r) => (r === '/' ? 'home' : r.replace(/^\/|\/$/g, '').replace(/\//g, '__'));
 
 await mkdir(outDir, { recursive: true });
 const browser = await chromium.launch();
-for (const vp of VIEWPORTS) {
-  const ctx = await browser.newContext({
-    viewport: { width: vp.width, height: vp.height },
-    reducedMotion: 'reduce',
-    deviceScaleFactor: 1,
-  });
-  await ctx.route('**/*', (route) => {
-    const h = new URL(route.request().url()).hostname;
-    if (h === 'localhost' || h === '127.0.0.1') route.continue();
-    else route.abort();
-  });
-  const page = await ctx.newPage();
-  for (const r of routes) {
-    await page.goto(base + r, { waitUntil: 'networkidle' });
-    await page.evaluate(() => document.fonts.ready);
-    await page.screenshot({
-      path: join(outDir, `${san(r)}__${vp.name}.png`),
-      fullPage: true,
-      animations: 'disabled',
+try {
+  for (const vp of VIEWPORTS) {
+    const ctx = await browser.newContext({
+      viewport: { width: vp.width, height: vp.height },
+      reducedMotion: 'reduce',
+      deviceScaleFactor: 1,
     });
+    await ctx.route('**/*', (route) => {
+      const h = new URL(route.request().url()).hostname;
+      if (h === 'localhost' || h === '127.0.0.1') route.continue();
+      else route.abort();
+    });
+    const page = await ctx.newPage();
+    for (const r of routes) {
+      await page.goto(base + r, { waitUntil: 'networkidle' });
+      await page.evaluate(() => document.fonts.ready);
+      await page.screenshot({
+        path: join(outDir, `${san(r)}__${vp.name}.png`),
+        fullPage: true,
+        animations: 'disabled',
+      });
+    }
+    await ctx.close();
   }
-  await ctx.close();
+} finally {
+  // Always release the browser + server, even if a capture threw (a route
+  // error still aborts the run — better to fail loud than misreport a route).
+  await browser.close();
+  server.close();
 }
-await browser.close();
-server.close();
 await writeFile(join(outDir, 'routes.json'), JSON.stringify(routes, null, 2));
 console.log(`shot ${routes.length} routes x ${VIEWPORTS.length} viewports from ${siteDir}`);
