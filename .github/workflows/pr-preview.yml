@@ -2,7 +2,7 @@ name: PR preview
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
   contents: write
@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   preview:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     env:
       PR: ${{ github.event.number }}
@@ -65,4 +66,49 @@ jobs:
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -f body="$BODY" >/dev/null
           else
             gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$BODY" >/dev/null
+          fi
+
+  cleanup:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    env:
+      PR: ${{ github.event.number }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Check out gh-pages directly. A closed PR's merge ref may no longer
+      # exist, so a default checkout can fail — and this job needs no PR code.
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Remove the preview
+        run: |
+          set -euo pipefail
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -d "pr-preview/pr-${PR}" ]; then
+            echo "No preview to remove."
+            exit 0
+          fi
+          rm -rf "pr-preview/pr-${PR}"
+          git add -A -- "pr-preview/pr-${PR}"
+          git commit -m "preview: remove PR #${PR}"
+          for i in 1 2 3; do
+            git push origin gh-pages && exit 0
+            git pull --rebase origin gh-pages
+          done
+          echo "Failed to push after 3 attempts." >&2
+          exit 1
+
+      - name: Update the sticky comment
+        run: |
+          set -euo pipefail
+          BODY="<!-- pr-preview -->
+          ### 🔎 Preview
+
+          Removed — this PR is closed."
+          ID=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+                --jq 'map(select(.body | startswith("<!-- pr-preview -->"))) | .[0].id // empty')
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ID}" -f body="$BODY" >/dev/null
           fi
