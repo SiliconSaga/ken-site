@@ -16,6 +16,19 @@ const VIEWPORTS = ['mobile', 'desktop'];
 const PXTHRESH = 0.1;   // pixelmatch per-pixel color sensitivity
 const MINPIX = 50;      // ignore sub-visual noise below this many changed pixels
 const CROP_MARGIN = 48; // px of context kept around the changed region
+// Magenta: the site's palette is dark navy, cream and gold, so the marker has to
+// be a colour the page itself never uses. Red reads as "part of the design" here.
+const HILITE = [255, 0, 212];
+// pixelmatch fades unchanged pixels TOWARD WHITE (`drawGrayPixel` blends against
+// 255), so its 0.1 default turns a dark page into a near-white sheet with hairline
+// marks — legible as data, useless as a picture. Half opacity keeps the page
+// readable underneath, which is what tells a reviewer WHERE on the page they are.
+const DIFF_ALPHA = 0.5;
+// A one-character text edit changes a few hundred pixels, most of them a single
+// stroke wide. Grown by a couple of pixels they register at a glance; left raw
+// they are invisible until you zoom.
+const DILATE = 2;
+const BOX_STROKE = 3;   // outline drawn around the changed region on the marked shot
 
 const baseRoutes = JSON.parse(readFileSync(join(baseDir, 'routes.json'), 'utf8'));
 const candRoutes = JSON.parse(readFileSync(join(candDir, 'routes.json'), 'utf8'));
@@ -31,9 +44,11 @@ function pad(png, w, h) {
   return out;
 }
 
-// Bounding box of pixels that differ between two same-size images (RGB, small
-// tolerance). Returns null if nothing meaningfully differs.
-function changedBox(a, b, w, h) {
+// Which pixels differ between two same-size images (RGB, small tolerance), and
+// the box containing them. One pass serves three consumers: the crop, the
+// thickened diff marks, and the outline on the marked screenshot.
+function changedMask(a, b, w, h) {
+  const mask = new Uint8Array(w * h);
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -41,6 +56,7 @@ function changedBox(a, b, w, h) {
       if (Math.abs(a.data[i] - b.data[i]) > 10 ||
           Math.abs(a.data[i + 1] - b.data[i + 1]) > 10 ||
           Math.abs(a.data[i + 2] - b.data[i + 2]) > 10) {
+        mask[y * w + x] = 1;
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -48,7 +64,64 @@ function changedBox(a, b, w, h) {
       }
     }
   }
-  return maxX < 0 ? null : { minX, minY, maxX, maxY };
+  return { mask, box: maxX < 0 ? null : { minX, minY, maxX, maxY } };
+}
+
+// Grow the mask by r pixels. Separable (rows then columns) so the cost stays
+// linear in the radius rather than quadratic — these are full-page screenshots.
+function dilate(mask, w, h, r) {
+  const rows = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!mask[y * w + x]) continue;
+      const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
+      for (let k = x0; k <= x1; k++) rows[y * w + k] = 1;
+    }
+  }
+  const out = new Uint8Array(w * h);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      if (!rows[y * w + x]) continue;
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      for (let k = y0; k <= y1; k++) out[k * w + x] = 1;
+    }
+  }
+  return out;
+}
+
+function paint(png, mask, w, h, [r, g, b]) {
+  for (let p = 0; p < w * h; p++) {
+    if (!mask[p]) continue;
+    const i = p * 4;
+    png.data[i] = r; png.data[i + 1] = g; png.data[i + 2] = b; png.data[i + 3] = 255;
+  }
+}
+
+// Copy of `src` with a hollow rectangle drawn around the box. This is the image a
+// non-technical reviewer actually reads: their own page, with a ring around the
+// part that moved — not a pixel mask, which is a debugging artifact.
+function markBox(src, box, w, h, stroke, [r, g, b]) {
+  const out = new PNG({ width: w, height: h });
+  PNG.bitblt(src, out, 0, 0, w, h, 0, 0);
+  if (!box) return out;
+  const pad = stroke + 2;
+  const x0 = Math.max(0, box.minX - pad), y0 = Math.max(0, box.minY - pad);
+  const x1 = Math.min(w - 1, box.maxX + pad), y1 = Math.min(h - 1, box.maxY + pad);
+  const put = (x, y) => {
+    const i = (y * w + x) * 4;
+    out.data[i] = r; out.data[i + 1] = g; out.data[i + 2] = b; out.data[i + 3] = 255;
+  };
+  for (let s = 0; s < stroke; s++) {
+    for (let x = x0; x <= x1; x++) {
+      if (y0 + s < h) put(x, y0 + s);
+      if (y1 - s >= 0) put(x, y1 - s);
+    }
+    for (let y = y0; y <= y1; y++) {
+      if (x0 + s < w) put(x0 + s, y);
+      if (x1 - s >= 0) put(x1 - s, y);
+    }
+  }
+  return out;
 }
 
 // Crop a PNG to the box + margin (clamped). Full image back if box is null.
@@ -78,14 +151,19 @@ for (const r of common) {
     const A = pad(a, w, h);
     const B = pad(b, w, h);
     const diff = new PNG({ width: w, height: h });
-    const n = pixelmatch(A.data, B.data, diff.data, w, h, { threshold: PXTHRESH });
+    const n = pixelmatch(A.data, B.data, diff.data, w, h, {
+      threshold: PXTHRESH, alpha: DIFF_ALPHA, diffColor: HILITE,
+    });
     if (n > MINPIX) {
       routeChanged = true;
       const sub = join(pubDir, san(r));
       mkdirSync(sub, { recursive: true });
       // Crop before/after/diff to a tight box around the change (+ margin) so a
       // one-line edit doesn't post a full-page-tall screenshot.
-      const box = changedBox(A, B, w, h);
+      const { mask, box } = changedMask(A, B, w, h);
+      paint(diff, dilate(mask, w, h, DILATE), w, h, HILITE);
+      const marked = markBox(B, box, w, h, BOX_STROKE, HILITE);
+      writeFileSync(join(sub, `marked__${vp}.png`), PNG.sync.write(cropTo(marked, box, CROP_MARGIN, w, h)));
       writeFileSync(join(sub, `before__${vp}.png`), PNG.sync.write(cropTo(A, box, CROP_MARGIN, w, h)));
       writeFileSync(join(sub, `after__${vp}.png`), PNG.sync.write(cropTo(B, box, CROP_MARGIN, w, h)));
       writeFileSync(join(sub, `diff__${vp}.png`), PNG.sync.write(cropTo(diff, box, CROP_MARGIN, w, h)));
@@ -116,10 +194,12 @@ for (const r of changed) {
   html += `<h2><span class=tag>${esc(r)}</span></h2>`;
   for (const vp of VIEWPORTS) {
     if (!existsSync(join(pubDir, san(r), `diff__${vp}.png`))) continue;
-    html += `<h3>${vp}</h3><div class=grid>`
+    html += `<h3>${vp}</h3>`
+      + `<figure><figcaption>what changed</figcaption><img src="${san(r)}/marked__${vp}.png"></figure>`
+      + `<div class=grid>`
       + `<figure><figcaption>before</figcaption><img src="${san(r)}/before__${vp}.png"></figure>`
       + `<figure><figcaption>after</figcaption><img src="${san(r)}/after__${vp}.png"></figure>`
-      + `<figure><figcaption>diff</figcaption><img src="${san(r)}/diff__${vp}.png"></figure></div>`;
+      + `<figure><figcaption>pixel diff</figcaption><img src="${san(r)}/diff__${vp}.png"></figure></div>`;
   }
 }
 if (added.length) html += `<h2>New pages</h2><ul>${added.map((r) => `<li><span class=tag>${esc(r)}</span> `
@@ -140,9 +220,13 @@ if (!changed.length && !added.length && !removed.length) {
       // change in one viewport but not the other).
       for (const vp of VIEWPORTS) {
         if (!existsSync(join(pubDir, san(r), `diff__${vp}.png`))) continue;
-        md += `**${vp}** — ![diff](${previewUrl}${san(r)}/diff__${vp}.png)\n\n`
+        // Lead with the page itself, ringed. The pixel mask answers "which
+        // pixels" — a question nobody reviewing a campaign site is asking — so it
+        // stays one click away rather than being the first thing they see.
+        md += `**${vp}** — ![what changed](${previewUrl}${san(r)}/marked__${vp}.png)\n\n`
           + `[before](${previewUrl}${san(r)}/before__${vp}.png) &middot; `
-          + `[after](${previewUrl}${san(r)}/after__${vp}.png)\n\n`;
+          + `[after](${previewUrl}${san(r)}/after__${vp}.png) &middot; `
+          + `[pixel diff](${previewUrl}${san(r)}/diff__${vp}.png)\n\n`;
       }
     }
   }
