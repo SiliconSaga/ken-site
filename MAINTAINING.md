@@ -6,8 +6,10 @@ published as part of the website (excluded in `_config.yml`). For the everyday
 "how do I change content" guide, see [`README.md`](README.md), which is written
 for a non-technical owner.
 
-This is a plain **Jekyll** site deployed to **GitHub Pages**. There is no build
-server to babysit: push to `main`, GitHub rebuilds, done.
+This is a plain **Jekyll** site deployed to **GitHub Pages**. GitHub Actions does
+the building: `main` is the source you edit, `gh-pages` is the built output CI
+publishes, and every pull request gets its own preview of the site plus a
+before/after picture of what changed.
 
 ---
 
@@ -68,20 +70,47 @@ ws exec ken-site bundle exec jekyll build
 | `_layouts/news.html` | Single-article layout |
 | `assets/css/site.css` | All the styling (dark + cream sections, gold accents, fonts) |
 | `assets/img/` | Logo and photos |
-| `Gemfile` | Local build dependencies (GitHub Pages ignores this and uses its own) |
+| `Gemfile` · `Gemfile.lock` | The gems CI builds with (see *Deploying*) |
+| `.github/workflows/` | `deploy.yml` (publish `main`) and `pr-preview.yml` (preview + visual diff) |
+| `.github/visual-diff/` | The screenshot/pixel-diff scripts and the CI-only config overlay |
 
 ## Deploying
 
-It's **GitHub Pages, "deploy from a branch"** (`main`, root folder). Every push
-to `main` triggers a rebuild within a minute — no Actions workflow to maintain.
+The live site is served from the **`gh-pages`** branch (root folder), and that
+branch is written **only by CI** — never by hand. Two workflows keep it current:
 
-Normal change flow (the GDD loop):
+| Workflow | Runs on | What it does |
+|----------|---------|--------------|
+| `deploy.yml` | push to `main` | Builds the site and replaces the production tree on `gh-pages`, leaving `pr-preview/` alone. |
+| `pr-preview.yml` | pull request opened / updated / closed | Publishes that PR's build to `gh-pages:/pr-preview/pr-<N>/` and comments the link; a second job screenshots `main` and the PR, pixel-diffs them, and comments the before/after images. Closing the PR deletes the whole preview. |
+
+Two things about that arrangement are load-bearing:
+
+- **`.nojekyll` at the root of `gh-pages`.** Without it GitHub re-runs Jekyll
+  over already-built output and drops `_`-prefixed paths, which silently 404s the
+  visual-diff images under `_diff/`.
+- **The `Gemfile`/`Gemfile.lock` now decide how the live site is built.** They
+  used to be local-preview-only (GitHub Pages supplied its own gems server-side);
+  since CI runs `bundle exec jekyll build`, the lockfile is the build. It carries
+  the `x86_64-linux` platform so the Linux runner can install from it — don't
+  remove that platform, and re-run `bundle lock --add-platform x86_64-linux` if it
+  ever goes missing.
+
+Normal change flow (the GDD loop) — a topic branch and a PR, so the preview and
+the visual diff exist to review before anything reaches the live site:
 
 ```bash
-# edit files, then from the yggdrasil root:
+# from the yggdrasil workspace root
+ws exec ken-site git checkout -b <type>/<short-description>
+# ... edit files ...
 ws commit ken-site .commits/<your-bodyfile>.md
-ws push ken-site main
+ws push ken-site
+ws cr ken-site "<type>: <what changed>" .crs/<your-bodyfile>.md
 ```
+
+The PR picks up two bot comments: the preview link, and the visual diff (or "no
+visual changes" for an edit that doesn't touch the rendered site). Merging fires
+`deploy.yml` and the live site follows within a minute or two.
 
 One-time setup that's **already done** (recorded here for reference / if the repo
 is recreated):
@@ -91,9 +120,12 @@ is recreated):
 ws gh repo create SiliconSaga/ken-site --public \
   --source=components/ken-site --remote=SiliconSaga --push
 
-# Enable Pages (no leading slash on the path — Windows MSYS rewrites it):
+# Enable Pages (no leading slash on the path — Windows MSYS rewrites it).
+# The site launched on main/root and was moved to gh-pages/root when previews
+# arrived: Pages serves one site per repo, so previews have to live inside the
+# production tree, which means production has to be built output on its own branch.
 ws gh api -X POST repos/SiliconSaga/ken-site/pages \
-  --raw-field 'source[branch]=main' --raw-field 'source[path]=/'
+  --raw-field 'source[branch]=gh-pages' --raw-field 'source[path]=/'
 ```
 
 - **Token / account note.** The repo lives under the **SiliconSaga** org because
