@@ -120,7 +120,9 @@ is recreated):
 ws gh repo create SiliconSaga/ken-site --public \
   --source=components/ken-site --remote=SiliconSaga --push
 
-# Enable Pages (no leading slash on the path — Windows MSYS rewrites it).
+# Enable Pages. Write the API endpoint without a leading slash — on Windows,
+# MSYS rewrites a leading-slash argument into a filesystem path. (The site's own
+# `source[path]=/` is unrelated: that slash means the repository root, and stays.)
 # The site launched on main/root and was moved to gh-pages/root when previews
 # arrived: Pages serves one site per repo, so previews have to live inside the
 # production tree, which means production has to be built output on its own branch.
