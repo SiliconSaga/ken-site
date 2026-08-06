@@ -44,24 +44,30 @@ function pad(png, w, h) {
   return out;
 }
 
-// Which pixels differ between two same-size images (RGB, small tolerance), and
-// the box containing them. One pass serves three consumers: the crop, the
-// thickened diff marks, and the outline on the marked screenshot.
-function changedMask(a, b, w, h) {
+// Which pixels differ, and the box containing them — read back from pixelmatch's
+// own verdict rather than recomputed.
+//
+// A second opinion here is a bug waiting to happen: pixelmatch decides by YIQ
+// distance with anti-aliasing detection, so a hand-rolled per-channel threshold
+// disagrees with it at the margins. Whichever pixels it ignores must also be the
+// ones we do not ring, do not paint, and do not widen the crop for — otherwise
+// the count that says "changed" and the picture that shows what changed are
+// answering different questions. `diffMask` gives us exactly its counted pixels:
+// only real differences are drawn, anti-aliased ones are left blank.
+function changedMask(a, b, w, h, opts) {
+  const only = new PNG({ width: w, height: h });
+  pixelmatch(a.data, b.data, only.data, w, h, { ...opts, diffMask: true });
   const mask = new Uint8Array(w * h);
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      if (Math.abs(a.data[i] - b.data[i]) > 10 ||
-          Math.abs(a.data[i + 1] - b.data[i + 1]) > 10 ||
-          Math.abs(a.data[i + 2] - b.data[i + 2]) > 10) {
-        mask[y * w + x] = 1;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
+      const p = y * w + x;
+      if (only.data[p * 4 + 3] === 0) continue;  // untouched by pixelmatch
+      mask[p] = 1;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
   }
   return { mask, box: maxX < 0 ? null : { minX, minY, maxX, maxY } };
@@ -151,16 +157,16 @@ for (const r of common) {
     const A = pad(a, w, h);
     const B = pad(b, w, h);
     const diff = new PNG({ width: w, height: h });
-    const n = pixelmatch(A.data, B.data, diff.data, w, h, {
-      threshold: PXTHRESH, alpha: DIFF_ALPHA, diffColor: HILITE,
-    });
+    const pmOpts = { threshold: PXTHRESH, alpha: DIFF_ALPHA, diffColor: HILITE };
+    const n = pixelmatch(A.data, B.data, diff.data, w, h, pmOpts);
     if (n > MINPIX) {
       routeChanged = true;
       const sub = join(pubDir, san(r));
       mkdirSync(sub, { recursive: true });
       // Crop before/after/diff to a tight box around the change (+ margin) so a
-      // one-line edit doesn't post a full-page-tall screenshot.
-      const { mask, box } = changedMask(A, B, w, h);
+      // one-line edit doesn't post a full-page-tall screenshot. The second pass
+      // costs one more comparison, and only on routes that actually changed.
+      const { mask, box } = changedMask(A, B, w, h, pmOpts);
       paint(diff, dilate(mask, w, h, DILATE), w, h, HILITE);
       const marked = markBox(B, box, w, h, BOX_STROKE, HILITE);
       writeFileSync(join(sub, `marked__${vp}.png`), PNG.sync.write(cropTo(marked, box, CROP_MARGIN, w, h)));
