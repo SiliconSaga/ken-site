@@ -82,6 +82,7 @@ permalink: pretty
 exclude:
   - README.md
   - MAINTAINING.md
+  - AGENTS.md
   - LICENSE
   - Gemfile
   - Gemfile.lock
