@@ -29,6 +29,17 @@ const DIFF_ALPHA = 0.5;
 // they are invisible until you zoom.
 const DILATE = 2;
 const BOX_STROKE = 3;   // outline drawn around the changed region on the marked shot
+// Breathing room between the change and the ring. Drawn tight to the pixels, the
+// outline reads as cramped — it touches the very thing it is pointing at, and on
+// a text edit the top edge lands within a couple of pixels of the glyphs.
+const BOX_PAD = 14;
+// Adding content pushes everything below it down, so every pixel after the edit
+// counts as changed and the box becomes "the edit plus the rest of the page".
+// The edit itself is at the TOP of that run — reflow only ever cascades
+// downwards — so past this height the box is clamped to its top and the comment
+// says the rest moved. Roughly a phone screen and a half: enough to see the
+// change in context, short enough to read at a glance.
+const MAX_BOX_H = 1100;
 
 const baseRoutes = JSON.parse(readFileSync(join(baseDir, 'routes.json'), 'utf8'));
 const candRoutes = JSON.parse(readFileSync(join(candDir, 'routes.json'), 'utf8'));
@@ -110,7 +121,7 @@ function markBox(src, box, w, h, stroke, [r, g, b]) {
   const out = new PNG({ width: w, height: h });
   PNG.bitblt(src, out, 0, 0, w, h, 0, 0);
   if (!box) return out;
-  const pad = stroke + 2;
+  const pad = stroke + BOX_PAD;
   const x0 = Math.max(0, box.minX - pad), y0 = Math.max(0, box.minY - pad);
   const x1 = Math.min(w - 1, box.maxX + pad), y1 = Math.min(h - 1, box.maxY + pad);
   const put = (x, y) => {
@@ -130,6 +141,19 @@ function markBox(src, box, w, h, stroke, [r, g, b]) {
   return out;
 }
 
+// Clamp a very tall box to its top, and say whether it was clamped.
+//
+// Anchored at the top because that is where the edit is: reflow cascades
+// downwards, so the first changed row is the change itself and everything below
+// is the page being pushed along. Keeping the tail would mean a phone-sized
+// screenshot several thousand pixels long, which nobody scrolls through.
+function clampTall(box, maxH) {
+  if (!box) return { box, clamped: false };
+  const height = box.maxY - box.minY + 1;
+  if (height <= maxH) return { box, clamped: false };
+  return { box: { ...box, maxY: box.minY + maxH - 1 }, clamped: true };
+}
+
 // Crop a PNG to the box + margin (clamped). Full image back if box is null.
 function cropTo(png, box, margin, w, h) {
   if (!box) return png;
@@ -144,6 +168,10 @@ function cropTo(png, box, margin, w, h) {
 
 mkdirSync(pubDir, { recursive: true });
 const changed = [];
+// Routes whose changed region ran past MAX_BOX_H — the signature of added or
+// removed content pushing the rest of the page along. Worth saying out loud, so
+// a reviewer knows the ring stops short of where the differences do.
+const reflowed = new Set();
 for (const r of common) {
   let routeChanged = false;
   for (const vp of VIEWPORTS) {
@@ -166,7 +194,9 @@ for (const r of common) {
       // Crop before/after/diff to a tight box around the change (+ margin) so a
       // one-line edit doesn't post a full-page-tall screenshot. The second pass
       // costs one more comparison, and only on routes that actually changed.
-      const { mask, box } = changedMask(A, B, w, h, pmOpts);
+      const { mask, box: fullBox } = changedMask(A, B, w, h, pmOpts);
+      const { box, clamped } = clampTall(fullBox, MAX_BOX_H);
+      if (clamped) reflowed.add(r);
       paint(diff, dilate(mask, w, h, DILATE), w, h, HILITE);
       const marked = markBox(B, box, w, h, BOX_STROKE, HILITE);
       writeFileSync(join(sub, `marked__${vp}.png`), PNG.sync.write(cropTo(marked, box, CROP_MARGIN, w, h)));
@@ -198,6 +228,7 @@ html += `<h1>Visual diff</h1><p>${changed.length} changed &middot; ${added.lengt
   + ` &middot; ${common.length} routes compared.</p>`;
 for (const r of changed) {
   html += `<h2><span class=tag>${esc(r)}</span></h2>`;
+  if (reflowed.has(r)) html += `<p>Everything below the change shifted down, so the outline stops at the top of it.</p>`;
   for (const vp of VIEWPORTS) {
     if (!existsSync(join(pubDir, san(r), `diff__${vp}.png`))) continue;
     html += `<h3>${vp}</h3>`
@@ -222,6 +253,10 @@ if (!changed.length && !added.length && !removed.length) {
     md += `**Changed:** ${changed.map((r) => `\`${r}\``).join(', ')}\n\n`;
     for (const r of changed) {
       md += `#### \`${r}\`\n\n`;
+      // Without this, a clamped ring reads as "this is all that changed" when in
+      // fact the rest of the page moved — which is the usual case for anything
+      // added or removed rather than reworded.
+      if (reflowed.has(r)) md += `_Adding this pushed everything below it down, so the outline marks where the change starts rather than every pixel that moved._\n\n`;
       // Only reference viewport images that were actually emitted (a route can
       // change in one viewport but not the other).
       for (const vp of VIEWPORTS) {
