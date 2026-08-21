@@ -29,6 +29,17 @@ const DIFF_ALPHA = 0.5;
 // they are invisible until you zoom.
 const DILATE = 2;
 const BOX_STROKE = 3;   // outline drawn around the changed region on the marked shot
+// Breathing room between the change and the ring. Drawn tight to the pixels, the
+// outline reads as cramped — it touches the very thing it is pointing at, and on
+// a text edit the top edge lands within a couple of pixels of the glyphs.
+const BOX_PAD = 14;
+// A changed region can run the height of the page — content moving is the common
+// cause, but a restyle that touches everything looks identical from here. Past
+// this height the outline is clamped to the top of the region so the marked
+// screenshot stays readable; the full-page pixel diff is written uncropped
+// alongside it, so nothing below the clamp is hidden. Roughly a phone screen and
+// a half: enough to see the change in context, short enough to read at a glance.
+const MAX_BOX_H = 1100;
 
 const baseRoutes = JSON.parse(readFileSync(join(baseDir, 'routes.json'), 'utf8'));
 const candRoutes = JSON.parse(readFileSync(join(candDir, 'routes.json'), 'utf8'));
@@ -110,7 +121,7 @@ function markBox(src, box, w, h, stroke, [r, g, b]) {
   const out = new PNG({ width: w, height: h });
   PNG.bitblt(src, out, 0, 0, w, h, 0, 0);
   if (!box) return out;
-  const pad = stroke + 2;
+  const pad = stroke + BOX_PAD;
   const x0 = Math.max(0, box.minX - pad), y0 = Math.max(0, box.minY - pad);
   const x1 = Math.min(w - 1, box.maxX + pad), y1 = Math.min(h - 1, box.maxY + pad);
   const put = (x, y) => {
@@ -130,6 +141,20 @@ function markBox(src, box, w, h, stroke, [r, g, b]) {
   return out;
 }
 
+// Clamp a very tall box to its top, and say whether it was clamped.
+//
+// Anchored at the top because a reader scrolls from the top and the first
+// changed row is where their eye should start. Keeping the tail would mean a
+// phone-sized screenshot several thousand pixels long, which nobody scrolls
+// through. This says nothing about WHY the region is tall — that is not
+// knowable from a bounding box — so the caller keeps the uncropped pixel diff.
+function clampTall(box, maxH) {
+  if (!box) return { box, clamped: false };
+  const height = box.maxY - box.minY + 1;
+  if (height <= maxH) return { box, clamped: false };
+  return { box: { ...box, maxY: box.minY + maxH - 1 }, clamped: true };
+}
+
 // Crop a PNG to the box + margin (clamped). Full image back if box is null.
 function cropTo(png, box, margin, w, h) {
   if (!box) return png;
@@ -144,6 +169,20 @@ function cropTo(png, box, margin, w, h) {
 
 mkdirSync(pubDir, { recursive: true });
 const changed = [];
+// Route+viewport pairs whose changed region ran past MAX_BOX_H, so the outline
+// stops short of where the differences do. Worth saying out loud — an outline
+// that looks complete but is not would be read as "this is all that changed".
+//
+// Keyed per VIEWPORT, not per route: a mobile shot is a third the width and so
+// several times taller, and routinely clamps where the desktop shot does not.
+// Keyed by route alone, the desktop section would carry a notice promising an
+// uncropped pixel diff that, for that viewport, was cropped like any other.
+//
+// Deliberately not called reflow. Content moving is the usual cause, but a
+// bounding box cannot tell that from a restyle touching the whole page, and
+// naming the cause would state as fact something never measured.
+const cropped = new Set();
+const cropKey = (r, vp) => `${r} ${vp}`;
 for (const r of common) {
   let routeChanged = false;
   for (const vp of VIEWPORTS) {
@@ -166,13 +205,22 @@ for (const r of common) {
       // Crop before/after/diff to a tight box around the change (+ margin) so a
       // one-line edit doesn't post a full-page-tall screenshot. The second pass
       // costs one more comparison, and only on routes that actually changed.
-      const { mask, box } = changedMask(A, B, w, h, pmOpts);
+      const { mask, box: fullBox } = changedMask(A, B, w, h, pmOpts);
+      const { box, clamped } = clampTall(fullBox, MAX_BOX_H);
+      if (clamped) cropped.add(cropKey(r, vp));
       paint(diff, dilate(mask, w, h, DILATE), w, h, HILITE);
       const marked = markBox(B, box, w, h, BOX_STROKE, HILITE);
       writeFileSync(join(sub, `marked__${vp}.png`), PNG.sync.write(cropTo(marked, box, CROP_MARGIN, w, h)));
       writeFileSync(join(sub, `before__${vp}.png`), PNG.sync.write(cropTo(A, box, CROP_MARGIN, w, h)));
       writeFileSync(join(sub, `after__${vp}.png`), PNG.sync.write(cropTo(B, box, CROP_MARGIN, w, h)));
-      writeFileSync(join(sub, `diff__${vp}.png`), PNG.sync.write(cropTo(diff, box, CROP_MARGIN, w, h)));
+      // The pixel diff is cropped to the SAME box as the rest, except when that
+      // box was clamped — then it is written whole. Cropping every artifact to a
+      // clamped box would silently discard differences below the cut, which is
+      // exactly the case where a reviewer needs to see them: nothing else in the
+      // report covers that ground. Cheap, too, since it only happens on a route
+      // that changed enough to be clamped in the first place.
+      writeFileSync(join(sub, `diff__${vp}.png`), PNG.sync.write(
+        clamped ? diff : cropTo(diff, box, CROP_MARGIN, w, h)));
     }
   }
   if (routeChanged) changed.push(r);
@@ -200,8 +248,10 @@ for (const r of changed) {
   html += `<h2><span class=tag>${esc(r)}</span></h2>`;
   for (const vp of VIEWPORTS) {
     if (!existsSync(join(pubDir, san(r), `diff__${vp}.png`))) continue;
-    html += `<h3>${vp}</h3>`
-      + `<figure><figcaption>what changed</figcaption><img src="${san(r)}/marked__${vp}.png"></figure>`
+    html += `<h3>${vp}</h3>`;
+    if (cropped.has(cropKey(r, vp))) html += `<p>The changed area runs taller than the outline shows — the ring marks where it starts. `
+      + `The pixel diff below is the whole page, so anything further down is in there.</p>`;
+    html += `<figure><figcaption>what changed</figcaption><img src="${san(r)}/marked__${vp}.png"></figure>`
       + `<div class=grid>`
       + `<figure><figcaption>before</figcaption><img src="${san(r)}/before__${vp}.png"></figure>`
       + `<figure><figcaption>after</figcaption><img src="${san(r)}/after__${vp}.png"></figure>`
@@ -233,6 +283,11 @@ if (!changed.length && !added.length && !removed.length) {
           + `[before](${previewUrl}${san(r)}/before__${vp}.png) &middot; `
           + `[after](${previewUrl}${san(r)}/after__${vp}.png) &middot; `
           + `[pixel diff](${previewUrl}${san(r)}/diff__${vp}.png)\n\n`;
+        // Without this, a clamped ring reads as "this is all that changed" when
+        // the differences carry on past it. Beside its own viewport's links,
+        // since the uncropped pixel diff it points at is that viewport's.
+        if (cropped.has(cropKey(r, vp))) md += `_The changed area runs taller than the outline shows — the ring marks where it starts. `
+          + `The pixel diff link above is the whole page, so anything further down is in there._\n\n`;
       }
     }
   }
