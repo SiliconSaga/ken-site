@@ -169,14 +169,20 @@ function cropTo(png, box, margin, w, h) {
 
 mkdirSync(pubDir, { recursive: true });
 const changed = [];
-// Routes whose changed region ran past MAX_BOX_H, so the outline stops short of
-// where the differences do. Worth saying out loud — an outline that looks
-// complete but is not would be read as "this is all that changed".
+// Route+viewport pairs whose changed region ran past MAX_BOX_H, so the outline
+// stops short of where the differences do. Worth saying out loud — an outline
+// that looks complete but is not would be read as "this is all that changed".
+//
+// Keyed per VIEWPORT, not per route: a mobile shot is a third the width and so
+// several times taller, and routinely clamps where the desktop shot does not.
+// Keyed by route alone, the desktop section would carry a notice promising an
+// uncropped pixel diff that, for that viewport, was cropped like any other.
 //
 // Deliberately not called reflow. Content moving is the usual cause, but a
 // bounding box cannot tell that from a restyle touching the whole page, and
 // naming the cause would state as fact something never measured.
 const cropped = new Set();
+const cropKey = (r, vp) => `${r} ${vp}`;
 for (const r of common) {
   let routeChanged = false;
   for (const vp of VIEWPORTS) {
@@ -201,7 +207,7 @@ for (const r of common) {
       // costs one more comparison, and only on routes that actually changed.
       const { mask, box: fullBox } = changedMask(A, B, w, h, pmOpts);
       const { box, clamped } = clampTall(fullBox, MAX_BOX_H);
-      if (clamped) cropped.add(r);
+      if (clamped) cropped.add(cropKey(r, vp));
       paint(diff, dilate(mask, w, h, DILATE), w, h, HILITE);
       const marked = markBox(B, box, w, h, BOX_STROKE, HILITE);
       writeFileSync(join(sub, `marked__${vp}.png`), PNG.sync.write(cropTo(marked, box, CROP_MARGIN, w, h)));
@@ -240,12 +246,12 @@ html += `<h1>Visual diff</h1><p>${changed.length} changed &middot; ${added.lengt
   + ` &middot; ${common.length} routes compared.</p>`;
 for (const r of changed) {
   html += `<h2><span class=tag>${esc(r)}</span></h2>`;
-  if (cropped.has(r)) html += `<p>The changed area runs taller than the outline shows — the ring marks where it starts. `
-    + `The pixel diff below is the whole page, so anything further down is in there.</p>`;
   for (const vp of VIEWPORTS) {
     if (!existsSync(join(pubDir, san(r), `diff__${vp}.png`))) continue;
-    html += `<h3>${vp}</h3>`
-      + `<figure><figcaption>what changed</figcaption><img src="${san(r)}/marked__${vp}.png"></figure>`
+    html += `<h3>${vp}</h3>`;
+    if (cropped.has(cropKey(r, vp))) html += `<p>The changed area runs taller than the outline shows — the ring marks where it starts. `
+      + `The pixel diff below is the whole page, so anything further down is in there.</p>`;
+    html += `<figure><figcaption>what changed</figcaption><img src="${san(r)}/marked__${vp}.png"></figure>`
       + `<div class=grid>`
       + `<figure><figcaption>before</figcaption><img src="${san(r)}/before__${vp}.png"></figure>`
       + `<figure><figcaption>after</figcaption><img src="${san(r)}/after__${vp}.png"></figure>`
@@ -266,10 +272,6 @@ if (!changed.length && !added.length && !removed.length) {
     md += `**Changed:** ${changed.map((r) => `\`${r}\``).join(', ')}\n\n`;
     for (const r of changed) {
       md += `#### \`${r}\`\n\n`;
-      // Without this, a clamped ring reads as "this is all that changed" when
-      // the differences carry on past it.
-      if (cropped.has(r)) md += `_The changed area runs taller than the outline shows — the ring marks where it starts. `
-        + `The pixel diff link is the whole page, so anything further down is in there._\n\n`;
       // Only reference viewport images that were actually emitted (a route can
       // change in one viewport but not the other).
       for (const vp of VIEWPORTS) {
@@ -281,6 +283,11 @@ if (!changed.length && !added.length && !removed.length) {
           + `[before](${previewUrl}${san(r)}/before__${vp}.png) &middot; `
           + `[after](${previewUrl}${san(r)}/after__${vp}.png) &middot; `
           + `[pixel diff](${previewUrl}${san(r)}/diff__${vp}.png)\n\n`;
+        // Without this, a clamped ring reads as "this is all that changed" when
+        // the differences carry on past it. Beside its own viewport's links,
+        // since the uncropped pixel diff it points at is that viewport's.
+        if (cropped.has(cropKey(r, vp))) md += `_The changed area runs taller than the outline shows — the ring marks where it starts. `
+          + `The pixel diff link above is the whole page, so anything further down is in there._\n\n`;
       }
     }
   }
