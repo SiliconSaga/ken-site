@@ -1,0 +1,23 @@
+# Line endings are decided here, not by whoever happens to be committing.
+#
+# `core.autocrlf=true` is the Git-for-Windows default, and without this file it
+# is the only thing standing between a Windows editor and a CRLF blob. That is
+# not hypothetical here: a whole-file rewrite of diff.mjs reached a commit as
+# "300 insertions, 293 deletions" for what was a twelve-line change, because an
+# agent rewrote the file and the working copy's CRLF went in with it. A diff
+# nobody can read is a change nobody can review, which is most of what this
+# repository's pull requests are for.
+#
+# Normalize every text file to LF in the repository. Working copies still get
+# whatever the platform wants on checkout; only the stored bytes are pinned.
+* text=auto eol=lf
+
+# Images are binary. `text=auto` would usually detect that, but saying so costs
+# one line and removes the guess.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
