@@ -34,7 +34,9 @@ Adding a news post means adding one file to `_news/` with `title`, `date`, `cate
 
 ## Never invent facts
 
-Do not invent dates, times, venues, addresses, prices, names, quotes, endorsements or statistics — not even as a placeholder that reads better. If a detail is missing, leave it visibly unfilled (`TBD`) and ask. An obviously incomplete draft is safe; a confidently wrong one is not, because the person whose name is on it will be the one correcting the record.
+Do not invent dates, times, venues, addresses, prices, names, quotes, endorsements or statistics — not even as a placeholder that reads better. If a detail is missing from the page text, leave it visibly unfilled (`TBD`) and ask. An obviously incomplete draft is safe; a confidently wrong one is not, because the person whose name is on it will be the one correcting the record.
+
+**`TBD` belongs in prose, never in front matter.** A news post's `date` is parsed as a real date when the site builds, so `date: TBD` does not render as a placeholder — it fails the build. If you do not know a required front-matter value, stop and ask for it rather than filling something in.
 
 Knowing the town does not tell you the venue. Only repeat specifics someone gave you or that you read in this repository.
 
@@ -65,5 +67,5 @@ A local build is optional — CI builds every PR — but it is the fastest way t
 - **One command per call.** No `cd`, `&&`, `;` or pipes — the workspace refuses composed commands so each one can be checked on its own.
 - **Use `ws exec ken-site <command>`** to run anything inside this repository. It is the composed form's job done in a single command: `ws exec ken-site git checkout -b fix/typo`, not `cd components/ken-site; git checkout -b fix/typo`.
 - **Use the `ws` verbs, not raw git**, for the things that need attribution and auth: `ws commit`, `ws push`, `ws cr`.
-- **Narrow output with flags, not pipes** — `git log -3`, `grep -m5`, `ws review --limit 5`.
+- **Narrow output with flags, not pipes** — `git log -3`, `ws review --limit 5`. Only when you are sampling: a search for content to change has to show every occurrence, so never cut one short with `grep -m5` or a `head`. Missing the fifth-and-later copies of a phrase is the failure described at the top of this file.
 - **Prefer `Read` / `Glob` / `Grep` over shelling out.** They are direct and there is nothing to compose.
