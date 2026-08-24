@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img" aria-label="Illustration of a ripe mango">
+  <title>A ripe mango</title>
+  <defs>
+    <linearGradient id="mango-skin" x1="0.78" y1="0.12" x2="0.18" y2="0.92">
+      <stop offset="0%" stop-color="#d8452a"/>
+      <stop offset="32%" stop-color="#ee7c25"/>
+      <stop offset="68%" stop-color="#f4ab2c"/>
+      <stop offset="100%" stop-color="#f6d24a"/>
+    </linearGradient>
+    <linearGradient id="mango-leaf" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5f9c3a"/>
+      <stop offset="100%" stop-color="#2f6b28"/>
+    </linearGradient>
+    <filter id="mango-soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <clipPath id="mango-clip">
+      <path d="M118 178 C158 122 238 96 291 128 C340 158 342 232 300 285 C256 340 172 356 128 322 C88 291 88 222 118 178 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="208" cy="344" rx="104" ry="18" fill="#2b1a10" opacity="0.14"/>
+
+  <!-- fruit -->
+  <path d="M118 178 C158 122 238 96 291 128 C340 158 342 232 300 285 C256 340 172 356 128 322 C88 291 88 222 118 178 Z" fill="url(#mango-skin)"/>
+
+  <g clip-path="url(#mango-clip)">
+    <!-- ripe blush across the shoulder -->
+    <ellipse cx="288" cy="146" rx="86" ry="62" fill="#c9331f" opacity="0.55" filter="url(#mango-soft)"/>
+    <!-- warm bloom toward the tip -->
+    <ellipse cx="132" cy="300" rx="78" ry="54" fill="#f8dc63" opacity="0.5" filter="url(#mango-soft)"/>
+    <!-- specular highlight -->
+    <ellipse cx="196" cy="168" rx="52" ry="26" fill="#fff3c4" opacity="0.42" filter="url(#mango-soft)" transform="rotate(-28 196 168)"/>
+    <ellipse cx="184" cy="160" rx="20" ry="9" fill="#fffdf2" opacity="0.55" transform="rotate(-28 184 160)"/>
+    <!-- skin speckles -->
+    <g fill="#8f3418" opacity="0.22">
+      <circle cx="243" cy="196" r="2.6"/>
+      <circle cx="270" cy="223" r="2.1"/>
+      <circle cx="219" cy="243" r="2.4"/>
+      <circle cx="284" cy="182" r="1.9"/>
+      <circle cx="252" cy="266" r="2.2"/>
+      <circle cx="186" cy="278" r="2"/>
+      <circle cx="164" cy="232" r="1.8"/>
+      <circle cx="296" cy="246" r="2"/>
+      <circle cx="212" cy="308" r="1.7"/>
+      <circle cx="146" cy="272" r="1.6"/>
+    </g>
+  </g>
+
+  <!-- stem -->
+  <path d="M281 124 C280 106 278 92 272 78" stroke="#7a4a22" stroke-width="9" stroke-linecap="round" fill="none"/>
+  <path d="M281 124 C280 108 279 96 274 84" stroke="#9c6330" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+
+  <!-- leaf -->
+  <path d="M274 80 C300 46 348 40 372 50 C356 84 316 104 280 92 Z" fill="url(#mango-leaf)"/>
+  <path d="M280 86 C306 66 338 56 366 52" stroke="#8bc06a" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.75"/>
+</svg>
